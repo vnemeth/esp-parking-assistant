@@ -31,6 +31,7 @@
 #ifdef ESP32
   #include <SPIFFS.h>
 #endif
+#include <FS.h>
 #define VERSION "v0.44 (ESP8266)"
 
 // ================================
@@ -41,7 +42,7 @@
 #define LED_DATA_PIN 12                     // Pin connected to LED strip DIN
 #define WIFIMODE 1                          // 0 = Only Soft Access Point, 1 = Only connect to local WiFi network with UN/PW, 2 = Both
 #define MQTTMODE 1                          // 0 = Disable MQTT, 1 = Enable (will only be enabled if WiFi mode = 1 or 2 - broker must be on same network)
-#define SERIAL_DEBUG 0                      // 0 = Disable (must be disabled if using RX/TX pins), 1 = enable
+#define SERIAL_DEBUG 1                      // 0 = Disable (must be disabled if using RX/TX pins), 1 = enable
 #define NUM_LEDS_MAX 100                    // For initialization - recommend actual max 50 LEDs if built as shown
 #define HCSR04_TRIG_PIN 12                  // Trigger pin of the HC-SR04 ultasonic sensor. Default GPIO12
 #define HCSR04_ECHO_PIN 14                  // Echo pin of the HC-SR04 ultasonic sensor. Default GPIO14
@@ -196,7 +197,9 @@ WiFiManager wifiManager;
   PubSubClient client(espClient);
 #endif
 
+#if defined(TFMPLUS)
 TFMPlus tfmini;
+#endif
 CRGB LEDs[NUM_LEDS_MAX];  
 
 //---- Captive Portal -------
