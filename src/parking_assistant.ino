@@ -8,6 +8,10 @@
  * suitability or utilization of this project, or as to the condition of this project, or whether it will be suitable to the users purposes or needs.
  * Use is solely at the end user's risk.
  */
+
+#define TFMPLUS 0                 // 0 = disable, 1 = enable the TFMPlus lidar sensor
+#define HCSR04 1                  // 0 = disable, 1 = enable the HC-SR04 ultrasonic sensor
+
 #include <FS.h>                   
 #include <WiFiManager.h>          //https://github.com/tzapu/WiFiManager (must be v2.0.8-beta or later)
 #include <ESP8266WiFi.h>
@@ -19,7 +23,9 @@
 #include <ArduinoJson.h>          //https://github.com/bblanchon/ArduinoJson
 #include <WiFiClient.h>
 #include <ESP8266HTTPUpdateServer.h>
-#include <TFMPlus.h>               //https://github.com/budryerson/TFMini-Plus
+#ifdef TFMPLUS
+  #include <TFMPlus.h>               //https://github.com/budryerson/TFMini-Plus
+#endif  
 #include <PubSubClient.h>
 
 #ifdef ESP32
@@ -33,10 +39,13 @@
 //  Change default values here. Changing any of these requires a recompile and upload.
 
 #define LED_DATA_PIN 12                     // Pin connected to LED strip DIN
-#define WIFIMODE 2                          // 0 = Only Soft Access Point, 1 = Only connect to local WiFi network with UN/PW, 2 = Both
+#define WIFIMODE 1                          // 0 = Only Soft Access Point, 1 = Only connect to local WiFi network with UN/PW, 2 = Both
 #define MQTTMODE 1                          // 0 = Disable MQTT, 1 = Enable (will only be enabled if WiFi mode = 1 or 2 - broker must be on same network)
 #define SERIAL_DEBUG 0                      // 0 = Disable (must be disabled if using RX/TX pins), 1 = enable
 #define NUM_LEDS_MAX 100                    // For initialization - recommend actual max 50 LEDs if built as shown
+#define HCSR04_TRIG_PIN 12                  // Trigger pin of the HC-SR04 ultasonic sensor. Default GPIO12
+#define HCSR04_ECHO_PIN 14                  // Echo pin of the HC-SR04 ultasonic sensor. Default GPIO14
+#define SOUND_SPEED_2 0.017                 // Half of the speed of sound as cm/microseconds in the air at 20 degrees C. Only half, because we have to calculate round trip for the HC-SR04 ultrasonic sensor
 
 bool ota_flag = true;                       // Must leave this as true for board to broadcast port to IDE upon boot
 uint16_t ota_boot_time_window = 2500;       // minimum time on boot for IP address to show in IDE ports, in millisecs
@@ -127,7 +136,6 @@ String WebColors[10];
 // -------------------------------
 
 //OTHER GLOBAL VARIABLES
-bool tfMiniEnabled = false;
 bool blinkOn = false;
 int intervalDistance = 0;
 bool carDetected = false;
@@ -326,7 +334,7 @@ void handleRoot() {
       } else {
         mainPage += ">";        
       }
-  mainPage += "<label for=\"mm\">Millimeters</label>&nbsp;&nbsp;\      
+  mainPage += "<label for=\"mm\">Millimeters</label>&nbsp;&nbsp;\
       (you must update settings to switch units)</td></tr>\
       <tr>\
       <td><label for=\"wakedistance\">Wake Distance:</label></td>";
@@ -1313,12 +1321,16 @@ void setup() {
   // SETUP TFMINI
   // --------------
   // TFMini uses Serial pins, so SERIAL_DEBUB must be 0 - otherwise only zero distance will be reported
-#if defined(SERIAL_DEBUG) && (SERIAL_DEBUG == 0)
-  Serial.begin(115200);
-  delay(20);
-  tfmini.begin(&Serial);
-  tfMiniEnabled = true;
-#endif
+  #if defined(TFMINIPLUS) && (SERIAL_DEBUG) && (SERIAL_DEBUG == 0)
+    Serial.begin(115200);
+    delay(20);
+    tfmini.begin(&Serial);
+  #endif
+  #if defined(HCSR04)
+    Serial.begin(115200);
+    pinMode(HCSR04_TRIG_PIN, OUTPUT);
+    pinMode(HCSR04_ECHO_PIN, INPUT);
+  #endif
 
   // ---------------------------------------------------------
   // Flash LEDs blue for 2 seconds to indicate successful boot 
@@ -1375,15 +1387,17 @@ void loop() {
   int16_t distance = 0;
 
   //Attempt to get reading from TFMini
-  if (tfMiniEnabled) {
+  tf_dist = 9999;  //Default value if no sensor or serial connection failed
+  #if defined(TFMPLUS)
     if (tfmini.getData(distance)) {
       tf_dist = distance * 10;
     } else {
       tf_dist = 8888;  //Default value if reading unsuccessful
     }
-  } else {
-    tf_dist = 9999;  //Default value if TFMini not enabled (serial connection failed)
-  }
+  #endif
+  #if defined(HCSR04)
+      tf_dist = getHCSR04Distance();
+  #endif
 
   //Determine if car (or other object) present in any zones
   if (tf_dist <= wakeDistance) {
@@ -1502,6 +1516,32 @@ void loop() {
   }
   delay(200);
 }
+
+// ===============================
+// Distance Measurement Functions
+// ===============================
+
+#if defined(HCSR04)
+int getHCSR04Distance() {
+    int duration;
+    int distance_cm;
+
+    digitalWrite(HCSR04_TRIG_PIN, LOW);
+    delayMicroseconds(2);
+    digitalWrite(HCSR04_TRIG_PIN, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(HCSR04_TRIG_PIN, LOW);
+
+    duration = pulseIn(HCSR04_ECHO_PIN, HIGH);
+    distance_cm = duration * SOUND_SPEED_2;
+    #if defined(SERIAL_DEBUG) && (SERIAL_DEBUG == 1)
+      Serial.print("HC-SR04 distance (cm): ");
+      Serial.println(distance_cm);
+    #endif
+
+    return distance_cm;
+}
+#endif
 
 // ===============================
 // Calculations and Misc Functions
