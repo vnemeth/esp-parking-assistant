@@ -41,7 +41,7 @@
 
 #define LED_DATA_PIN 12                     // Pin connected to LED strip DIN
 #define WIFIMODE 1                          // 0 = Only Soft Access Point, 1 = Only connect to local WiFi network with UN/PW, 2 = Both
-#define MQTTMODE 1                          // 0 = Disable MQTT, 1 = Enable (will only be enabled if WiFi mode = 1 or 2 - broker must be on same network)
+#define MQTTMODE 0                          // 0 = Disable MQTT, 1 = Enable (will only be enabled if WiFi mode = 1 or 2 - broker must be on same network)
 #define SERIAL_DEBUG 1                      // 0 = Disable (must be disabled if using RX/TX pins), 1 = enable
 #define NUM_LEDS_MAX 100                    // For initialization - recommend actual max 50 LEDs if built as shown
 #define HCSR04_TRIG_PIN 12                  // Trigger pin of the HC-SR04 ultasonic sensor. Default GPIO12
@@ -197,7 +197,7 @@ WiFiManager wifiManager;
   PubSubClient client(espClient);
 #endif
 
-#if defined(TFMPLUS)
+#if defined(TFMPLUS) && (TFMPLUS == 1)
 TFMPlus tfmini;
 #endif
 CRGB LEDs[NUM_LEDS_MAX];  
@@ -943,6 +943,7 @@ void handleNotFound() {
 // ===================================
 //  SETUP MQTT AND CALLBACKS
 // ===================================
+#if defined(MQTTMODE) && (MQTTMODE == 1)
 bool setup_mqtt() {
   byte mcount = 0;
   
@@ -979,7 +980,7 @@ bool setup_mqtt() {
   return true;
 }
 
-void reconnect() {
+void reconnect_mqtt() {
   int retries = 0;
   while (!client.connected()) {
     if(retries < 150)
@@ -1013,6 +1014,7 @@ void reconnect() {
     }
   }
 }
+#endif
 
 void callback(char* topic, byte* payload, unsigned int length) {
   payload[length] = '\0';
@@ -1292,9 +1294,13 @@ void setup() {
 
   if (mqttEnabled) {
     //Attempt to connect to MQTT broker - if fails, disable MQTT
+    #if defined(MQTTMODE) && (MQTTMODE == 1)
     if (!setup_mqtt()) {
       mqttEnabled = false;
     }
+    #else
+      mqttEnabled = false;
+    #endif
   }
   
   //-----------------------------
@@ -1324,12 +1330,12 @@ void setup() {
   // SETUP TFMINI
   // --------------
   // TFMini uses Serial pins, so SERIAL_DEBUB must be 0 - otherwise only zero distance will be reported
-  #if defined(TFMINIPLUS) && (SERIAL_DEBUG) && (SERIAL_DEBUG == 0)
+  #if defined(TFMINIPLUS) && (TFMINIPLUS == 1) && (SERIAL_DEBUG) && (SERIAL_DEBUG == 0)
     Serial.begin(115200);
     delay(20);
     tfmini.begin(&Serial);
   #endif
-  #if defined(HCSR04)
+  #if defined(HCSR04) && (HCSR04 == 1) && (SERIAL_DEBUG) && (SERIAL_DEBUG == 0)
     Serial.begin(115200);
     pinMode(HCSR04_TRIG_PIN, OUTPUT);
     pinMode(HCSR04_ECHO_PIN, INPUT);
@@ -1379,11 +1385,10 @@ void loop() {
   #if defined(MQTTMODE) && (MQTTMODE == 1 && (WIFIMODE == 1 || WIFIMODE == 2))
     if (!client.connected()) 
     {
-      reconnect();
+      reconnect_mqtt();
     }
     client.loop();
   #endif
-    
   }
   uint32_t currentMillis = millis();
   int16_t tf_dist = 0;
@@ -1391,14 +1396,14 @@ void loop() {
 
   //Attempt to get reading from TFMini
   tf_dist = 9999;  //Default value if no sensor or serial connection failed
-  #if defined(TFMPLUS)
+  #if defined(TFMPLUS) && (TFMPLUS == 1)
     if (tfmini.getData(distance)) {
       tf_dist = distance * 10;
     } else {
       tf_dist = 8888;  //Default value if reading unsuccessful
     }
   #endif
-  #if defined(HCSR04)
+  #if defined(HCSR04) && (HCSR04 == 1)
       tf_dist = getHCSR04Distance();
   #endif
 
@@ -1482,12 +1487,13 @@ void loop() {
   FastLED.show();
 
   //Update MQTT Stats per tele period
+  #if defined(MQTTMODE) && (MQTTMODE == 1)
   if (mqttEnabled) {
     if (((currentMillis - mqttLastUpdate) > (mqttTelePeriod * 1000)) || (forceMQTTUpdate)) {
       mqttLastUpdate = currentMillis;
       forceMQTTUpdate = false;
       if (!client.connected()) {
-        reconnect();
+        reconnect_mqtt();
       }
       // Publish MQTT values
       char outMsg[6];
@@ -1517,6 +1523,7 @@ void loop() {
       client.publish(("stat/" + mqttTopicPub + "/parkdistance").c_str(), outMsg, true);
     }
   }
+  #endif
   delay(200);
 }
 
@@ -1524,7 +1531,7 @@ void loop() {
 // Distance Measurement Functions
 // ===============================
 
-#if defined(HCSR04)
+#if defined(HCSR04) && (HCSR04 == 1)
 int getHCSR04Distance() {
     int duration;
     int distance_cm;
