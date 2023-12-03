@@ -19,6 +19,8 @@
 #include <ESP8266WebServer.h>
 #include <WiFiUdp.h>
 #include <ArduinoOTA.h>           //https://github.com/jandrassy/ArduinoOTA
+//#define FASTLED_ALLOW_INTERRUPTS 0
+//#define FASTLED_ESP8266_NODEMCU_PIN_ORDER
 #include <FastLED.h>
 #include <ArduinoJson.h>          //https://github.com/bblanchon/ArduinoJson
 #include <WiFiClient.h>
@@ -32,21 +34,21 @@
   #include <SPIFFS.h>
 #endif
 #include <FS.h>
-#define VERSION "v0.44 (ESP8266)"
+#define VERSION "v0.45 (ESP8266)"
 
 // ================================
 //  User Defined values and options
 // ================================
 //  Change default values here. Changing any of these requires a recompile and upload.
 
-#define LED_DATA_PIN 12                     // Pin connected to LED strip DIN
+#define LED_DATA_PIN 2                     // Pin connected to LED strip DIN
 #define WIFIMODE 1                          // 0 = Only Soft Access Point, 1 = Only connect to local WiFi network with UN/PW, 2 = Both
 #define MQTTMODE 0                          // 0 = Disable MQTT, 1 = Enable (will only be enabled if WiFi mode = 1 or 2 - broker must be on same network)
-#define SERIAL_DEBUG 1                      // 0 = Disable (must be disabled if using RX/TX pins), 1 = enable
+#define SERIAL_DEBUG 0                      // 0 = Disable (must be disabled if using RX/TX pins), 1 = enable
 #define NUM_LEDS_MAX 100                    // For initialization - recommend actual max 50 LEDs if built as shown
 #define HCSR04_TRIG_PIN 12                  // Trigger pin of the HC-SR04 ultasonic sensor. Default GPIO12
-#define HCSR04_ECHO_PIN 14                  // Echo pin of the HC-SR04 ultasonic sensor. Default GPIO14
-#define SOUND_SPEED_2 0.017                 // Half of the speed of sound as cm/microseconds in the air at 20 degrees C. Only half, because we have to calculate round trip for the HC-SR04 ultrasonic sensor
+#define HCSR04_ECHO_PIN 13                  // Echo pin of the HC-SR04 ultasonic sensor. Default GPIO14
+#define SOUND_SPEED_2 0.17                 // Half of the speed of sound as mm/microseconds in the air at 20 degrees C. Only half, because we have to calculate round trip for the HC-SR04 ultrasonic sensor
 
 bool ota_flag = true;                       // Must leave this as true for board to broadcast port to IDE upon boot
 uint16_t ota_boot_time_window = 2500;       // minimum time on boot for IP address to show in IDE ports, in millisecs
@@ -320,7 +322,7 @@ void handleRoot() {
       <b><u>Parking Distances</u></b>:<br>\
       These values, in inches, specify when the LED strip wakes (Wake distance), when the countdown starts (Active distance), when the car is in the desired parked position (Parked distance) or when it has pulled too far forward and should back up (Backup distance).<br><br>\
       See the <a href=\"https://github.com/Resinchem/ESP-Parking-Assistant/wiki/04-Using-the-Web-Interface\">Github wiki</a> for more information on setting these values for your situation. \
-      If using inches, you may enter decimal values (e.g. 27.5\") and these will be converted to millimeters in the code.  Values should decrease from Wake through Backup... maximum value is 192 inches (4980 mm) and minimum value is 12 inches (305 mm).<br><br>\
+      If using inches, you may enter decimal values (e.g. 27.5\") and these will be converted to millimeters in the code.  Values should decrease from Wake through Backup... maximum value is 192 inches (4980 mm) and minimum value is 1 inches (25 mm).<br><br>\
       <table>\
       <tr>\
       <td>Show distances in:</td>\
@@ -343,7 +345,7 @@ void handleRoot() {
       <td><label for=\"wakedistance\">Wake Distance:</label></td>";
 
   if (uomDistance) {
-    mainPage += "<td><input type=\"number\" min=\"305\" max=\"4980\" step=\"1\" name=\"wakedistance\" value=\"";   
+    mainPage += "<td><input type=\"number\" min=\"25\" max=\"4980\" step=\"1\" name=\"wakedistance\" value=\"";   
     mainPage += String(intWakeDistance); 
     mainPage += "\"> mm</td>";
   } else {
@@ -356,7 +358,7 @@ void handleRoot() {
       <tr>\
       <td><label for=\"activedistance\">Active Distance:</label></td>";
   if (uomDistance) {
-    mainPage += "<td><input type=\"number\" min=\"305\" max=\"4980\" step=\"1\" name=\"activedistance\" value=\"";
+    mainPage += "<td><input type=\"number\" min=\"25\" max=\"4980\" step=\"1\" name=\"activedistance\" value=\"";
     mainPage += String(intStartDistance);     
     mainPage += "\"> mm</td>";
   } else {
@@ -369,7 +371,7 @@ void handleRoot() {
       <tr>\
       <td><label for=\"parkeddistance\">Parked Distance:</label></td>";
   if (uomDistance) {
-    mainPage += "<td><input type=\"number\" min=\"305\" max=\"4980\" step=\"1\" name=\"parkeddistance\" value=\"";
+    mainPage += "<td><input type=\"number\" min=\"25\" max=\"4980\" step=\"1\" name=\"parkeddistance\" value=\"";
     mainPage += String(intParkDistance);
     mainPage += "\"> mm</td>";
   } else {
@@ -382,7 +384,7 @@ void handleRoot() {
       <tr>\
       <td><label for=\"backupistance\">Backup Distance:</label></td>";
   if (uomDistance) {
-    mainPage += "<td><input type=\"number\" min=\"305\" max=\"4980\" step=\"1\" name=\"backupdistance\" value=\"";
+    mainPage += "<td><input type=\"number\" min=\"25\" max=\"4980\" step=\"1\" name=\"backupdistance\" value=\"";
     mainPage += String(intBackupDistance);
     mainPage += "\"> mm</td>";
   } else {
@@ -1335,7 +1337,7 @@ void setup() {
     delay(20);
     tfmini.begin(&Serial);
   #endif
-  #if defined(HCSR04) && (HCSR04 == 1) && (SERIAL_DEBUG) && (SERIAL_DEBUG == 0)
+  #if defined(HCSR04) && (HCSR04 == 1)
     Serial.begin(115200);
     pinMode(HCSR04_TRIG_PIN, OUTPUT);
     pinMode(HCSR04_ECHO_PIN, INPUT);
@@ -1347,7 +1349,9 @@ void setup() {
   fill_solid(LEDs, numLEDs, CRGB::Blue);
   FastLED.show();
   #if defined(SERIAL_DEBUG) && (SERIAL_DEBUG == 1)
-    Serial.println("LEDs Blue - FASTLED ok");
+    Serial.print("LEDS Blue - ");
+    Serial.print(numLEDs);
+    Serial.println(" LEDs - FASTLED ok");
   #endif
   delay(2000);
   fill_solid(LEDs, numLEDs, CRGB::Black);
@@ -1448,15 +1452,12 @@ void loop() {
     if (tf_dist <= backupDistance) {
       //Beyond minimum distance - flash backup!
       blinkLEDs(ledColorBackup);
-      
     } else if (tf_dist <= parkDistance) {  
       //In desired parked distance
       fill_solid(LEDs, numLEDs, ledColorParked);
-  
     } else if ((tf_dist > startDistance) && (tf_dist <= wakeDistance)) {
       //Beyond start distance but within wake distance
       fill_solid(LEDs, numLEDs, ledColorWake);
-      
     } else if ((tf_dist <= startDistance) && (tf_dist > parkDistance)) {
       //Update based on selected effect
       if (ledEffect_m1 == "Out-In") {
@@ -1534,8 +1535,8 @@ void loop() {
 #if defined(HCSR04) && (HCSR04 == 1)
 int getHCSR04Distance() {
     int duration;
-    int distance_cm;
-
+    int distance_mm;
+    
     digitalWrite(HCSR04_TRIG_PIN, LOW);
     delayMicroseconds(2);
     digitalWrite(HCSR04_TRIG_PIN, HIGH);
@@ -1543,13 +1544,15 @@ int getHCSR04Distance() {
     digitalWrite(HCSR04_TRIG_PIN, LOW);
 
     duration = pulseIn(HCSR04_ECHO_PIN, HIGH);
-    distance_cm = duration * SOUND_SPEED_2;
+    distance_mm = duration * SOUND_SPEED_2;
     #if defined(SERIAL_DEBUG) && (SERIAL_DEBUG == 1)
-      Serial.print("HC-SR04 distance (cm): ");
-      Serial.println(distance_cm);
+      Serial.print("HC-SR04 duration ");
+      Serial.print(duration);
+      Serial.print(", distance (mm): ");
+      Serial.println(distance_mm);
     #endif
 
-    return distance_cm;
+    return distance_mm;
 }
 #endif
 
